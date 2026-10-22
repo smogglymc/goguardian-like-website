@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Classroom Monitor",
+  "version": "1.0.0",
+  "description": "Join your teacher's class to allow tab monitoring, site locking, and messages during class time.",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "webNavigation",
+    "storage",
+    "alarms",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://firestore.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

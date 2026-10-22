@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isTeacherOf(classId) {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/classes/$(classId)).data.teacherId == request.auth.uid;
+    }
+
+    match /classes/{classId} {
+      allow read: if isTeacherOf(classId);
+      allow create: if request.auth != null && request.resource.data.teacherId == request.auth.uid;
+      allow update, delete: if isTeacherOf(classId);
+
+      // The extension needs to look a class up by join code before it is
+      // authenticated as anyone, so joinCode lookups are allowed to read
+      // just the class doc (not the student roster) via the query below.
+      allow list: if request.query.limit <= 1;
+
+      match /students/{studentId} {
+        // Extension creates its own student doc when joining — no auth,
+        // but it can only set the "self" fields, never command fields.
+        allow create: if request.resource.data.keys().hasOnly(
+            ['name','status','currentUrl','currentTitle','lastSeen','joinedAt','commandId','lockedUrl']
+          ) &&
+          request.resource.data.commandId == '' &&
+          request.resource.data.lockedUrl == '';
+
+        // Extension can update only its own status fields, never commands.
+        allow update: if (
+            isTeacherOf(classId)
+          ) || (
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+              ['currentUrl','currentTitle','status','lastSeen']
+            )
+          );
+
+        // Student doc is readable by the extension itself (it knows the
+        // exact path it created) and by the owning teacher.
+        allow get: if true;
+        allow list: if isTeacherOf(classId);
+        allow delete: if isTeacherOf(classId);
+      }
+    }
+  }
+}

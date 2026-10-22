@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: system-ui, sans-serif; width: 260px; padding: 16px; background: #0b1220; color: #e6ebf5; }
+  h1 { font-size: 15px; margin: 0 0 12px; color: #4da3ff; }
+  input { width: 100%; box-sizing: border-box; padding: 8px; margin-bottom: 8px; border: 1px solid #28364d; background: #121a2b; color: #e6ebf5; border-radius: 4px; }
+  button { width: 100%; padding: 9px; border: none; border-radius: 4px; background: #2563eb; color: white; font-weight: 600; cursor: pointer; }
+  button.secondary { background: #28364d; }
+  #status { font-size: 13px; line-height: 1.5; }
+  #error { color: #ff6b6b; font-size: 12px; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <h1>Classroom Monitor</h1>
+  <div id="joinView">
+    <input id="name" placeholder="Your name" />
+    <input id="joinCode" placeholder="Class join code" style="text-transform:uppercase" />
+    <button id="joinBtn">Join class</button>
+    <div id="error"></div>
+  </div>
+  <div id="joinedView" style="display:none">
+    <div id="status"></div>
+    <button class="secondary" id="leaveBtn" style="margin-top:10px">Leave class</button>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

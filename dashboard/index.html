@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classroom Monitor</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+  :root { --bg:#0b1220; --panel:#121a2b; --line:#28364d; --accent:#2563eb; --text:#e6ebf5; --muted:#8a9ab3; --danger:#dc2626; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:16px 24px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:18px; margin:0; color:#4da3ff; letter-spacing:.3px; }
+  main { padding:24px; max-width:1100px; margin:0 auto; }
+  .hidden { display:none !important; }
+  input, select, button { font-family:inherit; font-size:14px; }
+  input { background:var(--panel); border:1px solid var(--line); color:var(--text); padding:9px 10px; border-radius:0; }
+  button { background:var(--accent); border:none; color:white; padding:9px 14px; border-radius:0; cursor:pointer; font-weight:600; }
+  button.secondary { background:var(--panel); border:1px solid var(--line); color:var(--text); }
+  button.danger { background:var(--danger); }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .card { background:var(--panel); border:1px solid var(--line); padding:20px; margin-bottom:20px; }
+  .classbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+  .joincode { font-family:monospace; background:#0b1220; border:1px solid var(--line); padding:4px 10px; letter-spacing:2px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--line); font-size:13px; }
+  th { color:var(--muted); font-weight:600; text-transform:uppercase; font-size:11px; letter-spacing:.5px; }
+  .status-dot { width:8px; height:8px; display:inline-block; margin-right:6px; }
+  .status-active { background:#22c55e; }
+  .status-idle { background:#eab308; }
+  .status-offline { background:#475569; }
+  .url-cell { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); }
+  .actions button { padding:5px 9px; font-size:12px; margin-right:4px; }
+  .error { color:#ff6b6b; font-size:13px; margin-top:8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Classroom Monitor</h1>
+  <div id="whoami" class="row"></div>
+</header>
+
+<main>
+
+  <div id="loginCard" class="card" style="max-width:360px">
+    <h3 style="margin-top:0">Teacher sign in</h3>
+    <div class="row" style="flex-direction:column; align-items:stretch">
+      <input id="loginEmail" placeholder="Email" type="email">
+      <input id="loginPassword" placeholder="Password" type="password">
+      <button id="loginBtn">Sign in</button>
+    </div>
+    <div id="loginError" class="error"></div>
+  </div>
+
+  <div id="appView" class="hidden">
+
+    <div class="card">
+      <div class="classbar">
+        <div class="row">
+          <label for="classSelect" style="color:var(--muted); font-size:13px">Class:</label>
+          <select id="classSelect"></select>
+          <span id="joinCodeDisplay" class="joincode hidden"></span>
+        </div>
+        <div class="row">
+          <input id="newClassName" placeholder="New class name" style="width:160px">
+          <button id="createClassBtn">Create class</button>
+        </div>
+      </div>
+      <div class="row">
+        <button class="secondary" id="lockAllBtn">Lock all to URL…</button>
+        <button class="secondary" id="unlockAllBtn">Unlock all</button>
+        <button class="secondary" id="messageAllBtn">Message all…</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <table>
+        <thead>
+          <tr><th></th><th>Student</th><th>Current tab</th><th>Last seen</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="studentRows">
+          <tr><td colspan="5" style="color:var(--muted)">No class selected.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</main>
+
+<script>
+// ---- Fill in your Firebase project config (Project settings > General > Your apps) ----
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+let currentClassId = null;
+let studentsUnsub = null;
+
+function genJoinCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let out = "";
+  for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+// ---- Auth ----
+document.getElementById("loginBtn").addEventListener("click", async () => {
+  const email = document.getElementById("loginEmail").value.trim();
+  const password = document.getElementById("loginPassword").value;
+  const errEl = document.getElementById("loginError");
+  errEl.textContent = "";
+  try {
+    await auth.signInWithEmailAndPassword(email, password);
+  } catch (e) {
+    errEl.textContent = e.message;
+  }
+});
+
+auth.onAuthStateChanged((user) => {
+  document.getElementById("loginCard").classList.toggle("hidden", !!user);
+  document.getElementById("appView").classList.toggle("hidden", !user);
+  document.getElementById("whoami").innerHTML = user
+    ? `<span style="color:var(--muted); font-size:13px">${user.email}</span> <button class="secondary" id="signOutBtn">Sign out</button>`
+    : "";
+  if (user) {
+    document.getElementById("signOutBtn").addEventListener("click", () => auth.signOut());
+    loadClasses(user.uid);
+  }
+});
+
+// ---- Classes ----
+async function loadClasses(uid) {
+  const snap = await db.collection("classes").where("teacherId", "==", uid).get();
+  const select = document.getElementById("classSelect");
+  select.innerHTML = "";
+  snap.forEach((doc) => {
+    const opt = document.createElement("option");
+    opt.value = doc.id;
+    opt.textContent = doc.data().name;
+    opt.dataset.joinCode = doc.data().joinCode;
+    select.appendChild(opt);
+  });
+  if (select.options.length) {
+    select.selectedIndex = 0;
+    selectClass(select.value, select.options[0].dataset.joinCode);
+  } else {
+    document.getElementById("studentRows").innerHTML =
+      '<tr><td colspan="5" style="color:var(--muted)">Create a class to get started.</td></tr>';
+  }
+}
+
+document.getElementById("classSelect").addEventListener("change", (e) => {
+  const opt = e.target.selectedOptions[0];
+  selectClass(opt.value, opt.dataset.joinCode);
+});
+
+document.getElementById("createClassBtn").addEventListener("click", async () => {
+  const name = document.getElementById("newClassName").value.trim();
+  if (!name) return;
+  const joinCode = genJoinCode();
+  const ref = await db.collection("classes").add({
+    name, joinCode, teacherId: auth.currentUser.uid, createdAt: new Date()
+  });
+  document.getElementById("newClassName").value = "";
+  await loadClasses(auth.currentUser.uid);
+  document.getElementById("classSelect").value = ref.id;
+  selectClass(ref.id, joinCode);
+});
+
+function selectClass(classId, joinCode) {
+  currentClassId = classId;
+  const jc = document.getElementById("joinCodeDisplay");
+  jc.textContent = "Join code: " + joinCode;
+  jc.classList.remove("hidden");
+  if (studentsUnsub) studentsUnsub();
+  studentsUnsub = db.collection("classes").doc(classId).collection("students")
+    .onSnapshot(renderStudents);
+}
+
+// ---- Students ----
+function fmtAgo(ts) {
+  if (!ts) return "never";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const secs = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (secs < 60) return "just now";
+  if (secs < 3600) return Math.floor(secs / 60) + "m ago";
+  return Math.floor(secs / 3600) + "h ago";
+}
+
+function statusClass(ts) {
+  if (!ts) return "status-offline";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const secs = (Date.now() - d.getTime()) / 1000;
+  if (secs < 90) return "status-active";
+  if (secs < 600) return "status-idle";
+  return "status-offline";
+}
+
+function renderStudents(snap) {
+  const tbody = document.getElementById("studentRows");
+  if (snap.empty) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">No students have joined with this code yet.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = "";
+  snap.forEach((doc) => {
+    const s = doc.data();
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><span class="status-dot ${statusClass(s.lastSeen)}"></span></td>
+      <td>${s.name || "(unnamed)"}</td>
+      <td class="url-cell" title="${s.currentUrl || ""}">${s.currentTitle || s.currentUrl || "—"}</td>
+      <td>${fmtAgo(s.lastSeen)}</td>
+      <td class="actions"></td>
+    `;
+    const actions = tr.querySelector(".actions");
+
+    const lockBtn = document.createElement("button");
+    lockBtn.className = "secondary";
+    lockBtn.textContent = s.lockedUrl ? "Relock" : "Lock";
+    lockBtn.onclick = () => {
+      const url = prompt("Lock this student to which URL?", s.lockedUrl || "https://");
+      if (url) sendCommand(doc.id, "lock", url);
+    };
+
+    const unlockBtn = document.createElement("button");
+    unlockBtn.className = "secondary";
+    unlockBtn.textContent = "Unlock";
+    unlockBtn.onclick = () => sendCommand(doc.id, "unlock", "");
+
+    const msgBtn = document.createElement("button");
+    msgBtn.className = "secondary";
+    msgBtn.textContent = "Message";
+    msgBtn.onclick = () => {
+      const text = prompt("Message to send:");
+      if (text) sendCommand(doc.id, "message", text);
+    };
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "danger";
+    closeBtn.textContent = "Close tab";
+    closeBtn.onclick = () => sendCommand(doc.id, "closeTab", "");
+
+    actions.append(lockBtn, unlockBtn, msgBtn, closeBtn);
+    tbody.appendChild(tr);
+  });
+}
+
+async function sendCommand(studentId, type, payload) {
+  const update = {
+    commandId: String(Date.now()) + Math.random().toString(16).slice(2),
+    commandType: type,
+    commandPayload: payload
+  };
+  if (type === "lock") update.lockedUrl = payload;
+  if (type === "unlock") update.lockedUrl = "";
+  await db.collection("classes").doc(currentClassId).collection("students").doc(studentId).update(update);
+}
+
+async function forEachStudent(fn) {
+  if (!currentClassId) return;
+  const snap = await db.collection("classes").doc(currentClassId).collection("students").get();
+  snap.forEach((doc) => fn(doc.id));
+}
+
+document.getElementById("lockAllBtn").addEventListener("click", async () => {
+  const url = prompt("Lock the whole class to which URL?", "https://");
+  if (!url) return;
+  await forEachStudent((id) => sendCommand(id, "lock", url));
+});
+document.getElementById("unlockAllBtn").addEventListener("click", async () => {
+  await forEachStudent((id) => sendCommand(id, "unlock", ""));
+});
+document.getElementById("messageAllBtn").addEventListener("click", async () => {
+  const text = prompt("Message the whole class:");
+  if (!text) return;
+  await forEachStudent((id) => sendCommand(id, "message", text));
+});
+</script>
+</body>
+</html>
