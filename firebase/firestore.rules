@@ -8,9 +8,15 @@ service cloud.firestore {
     }
 
     match /classes/{classId} {
-      allow read: if isTeacherOf(classId);
+      // Direct field comparison (not isTeacherOf/get()) so Firestore can
+      // "prove" the teacher's `.where("teacherId","==",uid)` query is safe
+      // without having to deny the whole query outright. Rules that use
+      // get() inside a list/query request can't be verified against the
+      // query's filters, so Firestore rejects such queries entirely —
+      // even when every resulting document would have passed.
+      allow read: if request.auth != null && resource.data.teacherId == request.auth.uid;
       allow create: if request.auth != null && request.resource.data.teacherId == request.auth.uid;
-      allow update, delete: if isTeacherOf(classId);
+      allow update, delete: if request.auth != null && resource.data.teacherId == request.auth.uid;
 
       // The extension needs to look a class up by join code before it is
       // authenticated as anyone, so joinCode lookups are allowed to read

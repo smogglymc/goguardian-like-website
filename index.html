@@ -70,6 +70,7 @@
           <button id="createClassBtn">Create class</button>
         </div>
       </div>
+      <div id="classError" class="error"></div>
       <div class="row">
         <button class="secondary" id="lockAllBtn">Lock all to URL…</button>
         <button class="secondary" id="unlockAllBtn">Unlock all</button>
@@ -138,8 +139,21 @@ auth.onAuthStateChanged((user) => {
 });
 
 // ---- Classes ----
+function showClassError(msg) {
+  document.getElementById("classError").textContent = msg;
+  if (msg) console.error(msg);
+}
+
 async function loadClasses(uid) {
-  const snap = await db.collection("classes").where("teacherId", "==", uid).get();
+  showClassError("");
+  let snap;
+  try {
+    snap = await db.collection("classes").where("teacherId", "==", uid).get();
+  } catch (e) {
+    showClassError("Couldn't load classes: " + e.message +
+      " — check that Firestore rules are published and firebaseConfig is filled in.");
+    return;
+  }
   const select = document.getElementById("classSelect");
   select.innerHTML = "";
   snap.forEach((doc) => {
@@ -164,16 +178,27 @@ document.getElementById("classSelect").addEventListener("change", (e) => {
 });
 
 document.getElementById("createClassBtn").addEventListener("click", async () => {
+  showClassError("");
   const name = document.getElementById("newClassName").value.trim();
-  if (!name) return;
+  if (!name) { showClassError("Enter a class name first."); return; }
+  if (!auth.currentUser) { showClassError("Not signed in."); return; }
   const joinCode = genJoinCode();
-  const ref = await db.collection("classes").add({
-    name, joinCode, teacherId: auth.currentUser.uid, createdAt: new Date()
-  });
-  document.getElementById("newClassName").value = "";
-  await loadClasses(auth.currentUser.uid);
-  document.getElementById("classSelect").value = ref.id;
-  selectClass(ref.id, joinCode);
+  const btn = document.getElementById("createClassBtn");
+  btn.disabled = true;
+  try {
+    const ref = await db.collection("classes").add({
+      name, joinCode, teacherId: auth.currentUser.uid, createdAt: new Date()
+    });
+    document.getElementById("newClassName").value = "";
+    await loadClasses(auth.currentUser.uid);
+    document.getElementById("classSelect").value = ref.id;
+    selectClass(ref.id, joinCode);
+  } catch (e) {
+    showClassError("Couldn't create class: " + e.message +
+      " — check that Firestore rules are published and firebaseConfig is filled in.");
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 function selectClass(classId, joinCode) {
